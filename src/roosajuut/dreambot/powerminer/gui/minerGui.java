@@ -6,6 +6,7 @@ import org.dreambot.api.Client;
 import org.dreambot.api.methods.container.impl.bank.BankLocation;
 import org.dreambot.api.methods.interactive.Players;
 import org.dreambot.api.methods.map.Tile;
+import roosajuut.dreambot.scriptmain.powerminer.Ores;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -23,6 +24,7 @@ public class minerGui extends JFrame {
 	String[] optionsToChoose = {"Apple", "Orange", "Banana", "Pineapple", "None of the listed"};
 
 	private static final long serialVersionUID = 1L;
+	private int[] ids;
 	private JPanel contentPane;
 	private JTextField oreID;
 	private JTextField goalField;
@@ -76,6 +78,16 @@ public class minerGui extends JFrame {
 		comboBox.setBounds(54, 58, 152, 20);
 		contentPane.add(comboBox);
 
+		//final JComboBox<GameObject> comboBox1 = new JComboBox<GameObject>();
+		//comboBox1.setModel(new DefaultComboBoxModel<GameObject>((Vector<GameObject>) GameObjects.all(rockFilter))
+		//comboBox1.setBounds(173, 260, 57, 23);
+		//contentPane.add(comboBox1);
+
+		JComboBox<Ores> oreList = new JComboBox<Ores>();
+		oreList.setModel(new DefaultComboBoxModel<Ores>(Ores.values()));
+		oreList.setBounds(250, 250, 150, 23);
+		contentPane.add(oreList);
+
 		final JCheckBox chckbxPowermine = new JCheckBox("Powermine");
 		final JCheckBox chckbxSmith = new JCheckBox("Smith");
 
@@ -127,6 +139,7 @@ public class minerGui extends JFrame {
 				String goal = goalField.getText();
 				String oreName = oreNameField.getText();
 				BankLocation bank = BankLocation.values()[comboBox.getSelectedIndex()];
+				Ores ores = Ores.values()[oreList.getSelectedIndex()];
 				boolean powermine = chckbxPowermine.isSelected();
 				boolean smith = chckbxSmith.isSelected();
 				String tileText = tileField.getText();
@@ -136,7 +149,7 @@ public class minerGui extends JFrame {
 				int z = Integer.parseInt(tileVals[2]);
 				Tile startTile = new Tile(x,y,z);
 				boolean dontMove = chckbxDontMove.isSelected();
-				MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove);
+				MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores);
 				var.tasks.add(mt);
 				model1.addElement(mt.toString());
 				list.setModel(model1);
@@ -231,13 +244,13 @@ public class minerGui extends JFrame {
 			sb.add(mt.getOreName());
 			//sb.add("\n");
 			//add id's
-			String idString = "";
+			StringBuilder idString = new StringBuilder();
 			for(int i = 0; i < mt.getIDs().length; i++){
-				idString+=mt.getIDs()[i];
+				idString.append(mt.getIDs()[i]);
 				if(i < (mt.getIDs().length - 1))
-					idString+=(",");
+					idString.append(",");
 			}
-			sb.add(idString);
+			sb.add(idString.toString());
 			//sb.add("\n");
 			//add tile
 			sb.add(mt.getStartTile().getX()+"," + mt.getStartTile().getY() + "," + mt.getStartTile().getZ());
@@ -256,7 +269,8 @@ public class minerGui extends JFrame {
 			//sb.add("\n");
 			//add don't move
 			sb.add(""+mt.dontMove());
-			//sb.add("\n");
+			//sb.add("\
+			sb.add(""+mt.getOres());
 		}
 		//sb.add("END FILE");
 		fm.writeFile(sb, fileName);
@@ -266,7 +280,7 @@ public class minerGui extends JFrame {
 		model1.clear();
 		String[] content = fm.readFileArray(fileName);
 		//(ctx, oreName, ids, startTile, goal, powermine, bank, dontMove);
-		for(int i = 0; i < content.length; i+=8){
+		for(int i = 0; i < content.length; i+=9){
 			//get name
 			String oreName = content[i];
 			//get ids
@@ -307,8 +321,17 @@ public class minerGui extends JFrame {
 			boolean dontMove = false;
 			if(dontMoveString.toLowerCase().equals("true"))
 				dontMove = true;
+			//ores
+			String oreString = content[i+8];
+			Ores ores = null;
+			for(Ores b : Ores.values()){
+				if(b.toString().equals(oreString)){
+					ores = b;
+					break;
+				}
+			}
 
-			MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove);
+			MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores);
 			System.out.println(mt.toString());
 			var.tasks.add(mt);
 			model1.addElement(mt.toString());

@@ -1,6 +1,8 @@
 package roosajuut.dreambot.scriptmain.powerminer;
 
+import org.dreambot.api.utilities.Logger;
 import roosajuut.dreambot.tools.PricedItem;
+import roosajuut.dreambot.scriptmain.powerminer.Miner;
 import org.dreambot.api.methods.container.impl.Inventory;
 import org.dreambot.api.methods.container.impl.bank.Bank;
 import org.dreambot.api.methods.container.impl.bank.BankLocation;
@@ -14,9 +16,11 @@ import org.dreambot.api.utilities.Timer;
 import org.dreambot.api.wrappers.interactive.GameObject;
 import org.dreambot.api.wrappers.items.Item;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class MineTask {
+	private Ores ores;
 	private String goal = "";
 	private Tile startTile = null;
 	private int[] ids;
@@ -28,27 +32,29 @@ public class MineTask {
 	private BankLocation bank;
 	private boolean finished = false;
 	private boolean dontMove = false;
-	
-	private final Filter<GameObject> rockFilter = new Filter<GameObject>(){
-		public boolean match(GameObject go){
-			if(go == null || !go.exists() || go.getName() == null || !go.getName().equals("Rocks"))
-				return false;
-			boolean hasID = false;
-			for(int i = 0; i < getIDs().length; i++){
-				if(go.getID() == getIDs()[i]){
-					hasID = true;
-					break;
-				}
+	private MineTask currTask = null;
+	public void print(Object msg) {
+		Logger.log(msg);
+	}
+
+	private final Filter<GameObject> rockFilter = go -> {
+		if(go == null || !go.exists() || go.getName() == null || !go.getName().equals("Rocks"))
+			return false;
+		boolean hasID = false;
+		for(int i = 0; i < getIDs().length; i++){
+			if(go.getID() == getIDs()[i]){
+				hasID = true;
+				break;
 			}
-			if(!hasID)
-				return false;
-			if(dontMove() && go.distance(Players.getLocal()) > 1)
-				return false;
-			return true;
 		}
+		if(!hasID)
+			return false;
+		if(dontMove() && go.distance(Players.getLocal()) > 1)
+			return false;
+		return true;
 	};
-	
-	public MineTask(String oreName, int[] ids, Tile startTile, String goal, boolean powermine, boolean smith, BankLocation bank, boolean dontMove){
+
+	public MineTask(String oreName, int[] ids, Tile startTile, String goal, boolean powermine, boolean smith, BankLocation bank, boolean dontMove, Ores ores){
 		this.oreName = oreName;
 		this.ids = ids;
 		this.startTile = startTile;
@@ -58,6 +64,7 @@ public class MineTask {
 		this.oreTracker = new PricedItem(oreName, false);
 		this.bank = bank;
 		this.dontMove = dontMove;
+		this.ores = ores;
 		t = new Timer();
 	}
 	
@@ -124,7 +131,7 @@ public class MineTask {
 	}
 	
 	public GameObject getRock(){
-		List<GameObject> acceptableRocks = GameObjects.all(rockFilter);
+		List<GameObject> acceptableRocks = GameObjects.all(11161,10943,11361,11360);
 		return getClosest(acceptableRocks);
 	}
 	
@@ -149,11 +156,13 @@ public class MineTask {
 	public Timer getTimer(){
 		return t;
 	}
+	public Ores getOres(){
+		return this.ores;
+	}
 	public int[] getIDs(){
 		return ids;
 	}
 	public BankLocation getBank(){
-
 		return bank;
 	}
 	public boolean getFinished(){
@@ -207,7 +216,8 @@ public class MineTask {
 		sb.append("Bank: " + bank.toString() + "\n");
 		sb.append("Goal: " + goal + "\n");
 		sb.append("Powermine: " + powermine + "\n");
-		sb.append("Don't Move: " + dontMove);
+		sb.append("Don't Move: " + dontMove + "\n");
+		sb.append("Ores: " + ores);
 		return sb.toString();
 	}
 }
