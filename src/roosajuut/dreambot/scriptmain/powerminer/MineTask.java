@@ -38,7 +38,7 @@ public class MineTask {
 	}
 
 	private final Filter<GameObject> rockFilter = go -> {
-		if(go == null || !go.exists() || go.getName() == null || !go.getName().equals("Rocks"))
+		if(go == null || !go.exists() || go.getName() == null || !(go.getName().length() > 6))
 			return false;
 		boolean hasID = false;
 		for(int i = 0; i < getIDs().length; i++){
@@ -131,7 +131,7 @@ public class MineTask {
 	}
 	
 	public GameObject getRock(){
-		List<GameObject> acceptableRocks = GameObjects.all(11161,10943,11361,11360);
+		List<GameObject> acceptableRocks = GameObjects.all(rockFilter);//11161,10943,11361,11360,11365
 		return getClosest(acceptableRocks);
 	}
 	

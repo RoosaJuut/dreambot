@@ -212,7 +212,7 @@ public class minerGui extends JFrame {
 		contentPane.add(chckbxDontMove);
 
 		txtFilename = new JTextField();
-		txtFilename.setText("tinore4");
+		txtFilename.setText("ironore");
 		txtFilename.setBounds(10, 249, 86, 20);
 		contentPane.add(txtFilename);
 		txtFilename.setColumns(10);

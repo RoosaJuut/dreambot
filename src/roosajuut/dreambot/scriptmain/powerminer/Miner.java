@@ -1,5 +1,10 @@
 package roosajuut.dreambot.scriptmain.powerminer;
 
+import org.dreambot.api.methods.container.impl.bank.BankLocation;
+import org.dreambot.api.methods.hotkeys.NPCAttackOption;
+import org.dreambot.api.methods.interactive.NPCs;
+import org.dreambot.api.wrappers.interactive.Character;
+import org.dreambot.api.wrappers.interactive.NPC;
 import roosajuut.dreambot.powerminer.gui.ScriptVars;
 import roosajuut.dreambot.powerminer.gui.minerGui;
 import org.dreambot.api.Client;
@@ -37,13 +42,16 @@ import org.dreambot.api.wrappers.items.Item;
 import org.dreambot.api.wrappers.widgets.Menu;
 import org.dreambot.api.wrappers.widgets.WidgetChild;
 
+import javax.annotation.Nonnull;
+import javax.swing.*;
 import java.awt.*;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 
 import static org.dreambot.api.methods.interactive.Players.*;
 
-@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.81, category = Category.MINING)
+@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.84, category = Category.MINING)
 public class Miner extends AbstractScript {
     Area EDGE_BANK = new Area(3095, 3496, 3095, 3494, 0);
     Area FURNACE = new Area(3109, 3499, 3108, 3498, 0);
@@ -70,14 +78,17 @@ public class Miner extends AbstractScript {
     private int taskPlace = 0;
     private boolean started = false;
     private minerGui gui = null;
-
+    //private NPC closestNPC;
     private MethodProvider mp;
     Bank bank;
     Inventory inv;
 
+    public Miner() {
+    }
+
 
     private enum State {
-        MINE, DROP, BANK, GUI, SMITH
+        MINE, DROP, BANK, GUI, SMITH, COMBAT
     }
 
     private State getState() {
@@ -119,7 +130,11 @@ public class Miner extends AbstractScript {
                 currTask.resetTimer();
                 return 200;
             }
+
             Player myPlayer = getLocal();
+            NPC closestNPC = NPCs.closest(Character::isInCombat);
+            //NPC closestNPC = NPCs.closest("Mugger");
+
             if (!Walking.isRunEnabled() && Walking.getRunEnergy() > Calculations.random(30, 70)) {
                 Walking.toggleRun();
             }
@@ -133,6 +148,11 @@ public class Miner extends AbstractScript {
                 Walking.walk(currTask.getBank().getCenter());
                 return Calculations.random(300, 600);
             }
+            if (myPlayer.isInCombat() && Objects.equals(state.toString(),"MINE") && myPlayer.getHealthPercent() > 50) {
+                print("Fighting with " + closestNPC);
+                print("Health precent of player is " + myPlayer.getHealthPercent());
+                return Calculations.random(1000, 3000);
+            }
 
 
 
@@ -141,10 +161,10 @@ public class Miner extends AbstractScript {
         switch (state) {
             case GUI:
                 if (gui == null) {
-                    gui = new minerGui(sv);
+                    SwingUtilities.invokeLater(() -> gui = new minerGui(sv));
                     sleep(300);
                 } else if (!gui.isVisible() && !sv.started) {
-                    gui.setVisible(true);
+                    SwingUtilities.invokeLater(() -> gui.setVisible(true));
                     sleep(1000);
                 } else {
                     if (!sv.started) {
@@ -152,17 +172,17 @@ public class Miner extends AbstractScript {
                     } else {
                         //bank = Bank;
                         //inv = Inventory;
-                        currTask = sv.tasks.get(0);
-                        currTask.resetTimer();
-                        SkillTracker.start(Skill.SMITHING);
-                        SkillTracker.start(Skill.MINING);
-                        timer = new Timer();
-                        started = true;
+                        SwingUtilities.invokeLater(() -> currTask = sv.tasks.get(0));
+                        SwingUtilities.invokeLater(() -> currTask.resetTimer());
+                        SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.SMITHING));
+                        SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.MINING));
+                        SwingUtilities.invokeLater(() -> timer = new Timer());
+                        SwingUtilities.invokeLater(() -> started = true);
                     }
                 }
                 break;
             case BANK:
-
+                print("Test");
                 if (bank.isOpen()) {
                     if (inv.get(new Filter<Item>() {
                         public boolean match(Item i) {
@@ -226,16 +246,36 @@ public class Miner extends AbstractScript {
                 }
                 break;
             case SMITH:
-
+                int copperOreCount = Bank.count("Copper ore");
+                int tinOreCount = Bank.count("Tin ore");
+                int ironOreCount = Bank.count("Iron ore");
+                if (copperOreCount > 1000 && tinOreCount > 1000) {
+                    currTask.setOreName("Bronze bar");
+                }
+                if (ironOreCount > 100) {
+                    currTask.setOreName("Iron bar");
+                }
+                print("Changing task to " + currTask.getOreName());
+                currTask.setBank(BankLocation.EDGEVILLE);
+                print("Changing bank location to " + currTask.getBank());
+                if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Bronze bar")) {
+                    currTask.setGoal("mine=" + Math.min(copperOreCount, tinOreCount));
+                }
+                if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Iron bar")) {
+                    currTask.setGoal("mine=" + ironOreCount);
+                }
+                Bank.getClosestBankLocation();
                 grabBronzeBarsToSmelt();
                 WalkToFurnace();
                 InteractWithFurnace();
                 break;
             case MINE:
+                //currTask.setOreName("Copper ore");
+                //currTask.setBank(BankLocation.VARROCK_EAST);
                 if (Bank.isOpen()) {
                     bank.close();
 
-                    print("Bank closed! Going to mine");
+                    print("Bank closed! Going to " + getState());
                     Sleep.sleepUntil(new Condition() {
                         public boolean verify() {
                             return !bank.isOpen();
@@ -273,9 +313,10 @@ public class Miner extends AbstractScript {
                         if (Camera.getPitch() < 270) {
                             Camera.rotateToPitch((int) (Calculations.random(300, 400) * Client.seededRandom()));
                         }
-                        if (getLocal().getAnimation() == -1 && (currRock == null || !currRock.isOnScreen() || !currTask.isPowerMine()))
+                        if (getLocal().getAnimation() == -1 && (currRock == null || !currRock.isOnScreen() || !currTask.isPowerMine())) {
                             print("Going to find " + currTask.getRock());
                             currRock = currTask.getRock();//getGameObjects().getClosest(currTask.getIDs());
+                        }
                         if (getLocal().getAnimation() == -1) {
                             print("Running mining sequence");
                             if (currRock != null && currRock.exists() && getLocal().getTile().equals(currTask.getStartTile())) {
@@ -284,13 +325,13 @@ public class Miner extends AbstractScript {
                                 AntiPattern();
                                 if (currRock.interact("Mine")) {
                                     print("Mining");
-                                    sleep(300,3000);
+                                    sleep(100,300);
                                     if (currTask.isPowerMine()) {
                                         hover(true);
                                     } else {
                                         print("Current start tile is " + currTask.getStartTile());
                                         print("Current player tile is " + getLocal().getTile());
-                                        if (currTask.getStartTile() != getLocal().getTile() && getLocal().getAnimation() != 625) {
+                                        if (currTask.getStartTile() != getLocal().getTile() && getLocal().getAnimation() == 1) {
                                             print("Start tile is not equal to current tile");
                                             print("Walking to start tile");
                                             Walking.walk(currTask.getStartTile());
@@ -308,12 +349,11 @@ public class Miner extends AbstractScript {
                                                 return getLocal().getAnimation() == -1;
                                             }
                                         }, 1800);
-                                        sleep(300, 500);
+                                        sleep(0, 100);
                                     }
                                 }
                             }
                         }
-
                         if (getLocal().getAnimation() == -1) {
                             if (Objects.equals(currTask.getOreName(), "Tin ore")) {
                                 print("Mining tin ore");
@@ -321,17 +361,20 @@ public class Miner extends AbstractScript {
                             if (Objects.equals(currTask.getOreName(), "Copper ore")) {
                                 print("Mining copper ore");
                             }
+                            if (Objects.equals(currTask.getOreName(), "Iron ore")) {
+                                print("Mining iron ore");
+                            }
                             Sleep.sleepWhile(new Condition() {
                                 public boolean verify() {
                                     return getLocal().getAnimation() == 625;
                                 }
                             }, 20000);
                             //AntiPattern();
-                        } if (getLocal().getAnimation() == -1 && !currTask.getStartTile().equals(getLocal().getTile())) {
+                        }
+                        if (getLocal().getAnimation() == -1 && !currTask.getStartTile().equals(getLocal().getTile())) {
                             Walking.walk(currTask.getStartTile());
                             print("Walking to " + currTask.getStartTile() + " tile");
                         }
-
                         List<Player> allPlayers = Players.all();
                         allPlayers.remove(getLocal());
                         //If other player is mining on same tile, find new one.
@@ -375,14 +418,23 @@ public class Miner extends AbstractScript {
                         }
                         //print("player on same tile" + newTile + PlayerName);
 
-                        sleep(300, 1500);
+                        sleep(100, 300);
                     }
                 }
                 currTask.getTracker().update();
                 break;
+            case COMBAT:
+                if (Objects.equals(state.toString(),"COMBAT") && !getLocal().isInCombat() && getLocal().getAnimation() == -1) {
+                    NPC closestNoob = NPCs.closest("Mugger");
+                    closestNoob.interact("Attack");
+                    print("Attacking " + closestNoob);
+                    sleep(300, 1000);
+                }
+                break;
         }
         return 200;
     }
+
     private Tile getRandomCopperOreTile() {
         //If Ore name = Copper ore and current tile is occupied by someone else get new tile
         if (Objects.equals(currTask.getOreName(), "Copper ore")) {
@@ -399,6 +451,7 @@ public class Miner extends AbstractScript {
             }
         } return currTask.getStartTile();
     }
+
     private Tile getRandomTinOreTile() {
             if (Objects.equals(currTask.getOreName(), "Tin ore")) {
                 int randomNr = Calculations.random(1, 3);
@@ -475,7 +528,6 @@ public class Miner extends AbstractScript {
         else if (Objects.equals(currTask.getOreName(), "Bronze bar")) {
             if (Bank.count("Copper ore") < 14 || Bank.count("Tin ore") < 14) {
                 print("not enough ore");
-                stop();
                 Bank.getClosestBankLocation();
                 Sleep.sleepUntil(new Condition() {
                     public boolean verify() {
@@ -483,8 +535,10 @@ public class Miner extends AbstractScript {
                     }
                 }, 5000);
                 Bank.depositAllItems();
-                print("getting copper and tin ore to smelth");
-            } else {
+                print("Getting copper and tin ore to smelth");
+                currTask.setOreName("Copper ore");
+            }
+            else {
                 if (Inventory.contains("Copper ore") && Inventory.contains("Tin ore")) {
                     InteractWithFurnace();
                 }
@@ -521,6 +575,7 @@ public class Miner extends AbstractScript {
                 }
             }
         } else currTask.setFinished(true);
+        print("Done smithing");
     }
 
     public void WalkToBank() {
@@ -577,7 +632,7 @@ public class Miner extends AbstractScript {
             if (ClickBronzeBar != null) {
                 log("Clicking Iron bar to smelt all");
                 ClickBronzeBar.interact();
-
+                currTask.getTracker().update();
             }
 
             AntiPattern();
@@ -672,8 +727,6 @@ public class Miner extends AbstractScript {
             log("Going AFK for 60-90 seconds");
             Mouse.moveOutsideScreen();
             sleep(Calculations.random(60000, 90000)); // afk for 60-90 seconds
-
-
         }
         if (random == 76) {
             if (Objects.equals(state.toString(), "MINE")) {
@@ -692,7 +745,8 @@ public class Miner extends AbstractScript {
                     Tabs.openWithMouse(Tab.INVENTORY);
                     sleep(100, 300);
                 }
-            } else if (Objects.equals(state.toString(), "SMITH")) {
+            }
+            else if (Objects.equals(state.toString(), "SMITH")) {
                 print("Checking Smithing skill");
                 int randLoop = Calculations.random(0, 1);
                 int x = 0;
@@ -709,28 +763,42 @@ public class Miner extends AbstractScript {
                     sleep(100, 300);
                 }
             }
+            else if (Objects.equals(state.toString(), "BANK")) {
+                print("Checking Mining skill");
+                int randLoop = Calculations.random(0, 1);
+                int x = 0;
+
+                while (x <= randLoop) {
+                    x++;
+
+
+                    Tabs.openWithMouse(Tab.SKILLS);
+                    sleep(300, 500);
+                    Skills.hoverSkill(Skill.MINING);
+                    sleep(2000, 4000);
+                    Tabs.openWithMouse(Tab.INVENTORY);
+                    sleep(100, 300);
+                }
+            }
         }
-        if (random == 125 && Objects.equals(state.toString(), "MINE") && getLocal().getAnimation() == -1) {
-            print("Switching to copper ore");
-            currTask.setOreName("Copper ore");
-            currTask.setIDs(new int[]{11161,10943});
-            currTask.setStarTile(getRandomCopperOreTile());
-            print("Setting new tile for copper ore " + currTask.getStartTile());
+        if (currTask.getBank().equals(BankLocation.VARROCK_EAST)) {
+            if (random == 125 && Objects.equals(state.toString(), "MINE") && getLocal().getAnimation() == -1) {
+                print("Switching to copper ore");
+                currTask.setOreName("Copper ore");
+                currTask.setIDs(new int[]{11161,10943});
+                currTask.setStarTile(getRandomCopperOreTile());
+                currTask.setBank(BankLocation.VARROCK_EAST);
+                print("Setting new tile for copper ore " + currTask.getStartTile());
+            }
+            if (random == 126 && Objects.equals(state.toString(), "MINE")  && getLocal().getAnimation() == -1) {
+                print("Switching to Tin ore");
+                currTask.setOreName("Tin ore");
+                currTask.setIDs(new int[]{11361,11360});
+                currTask.setStarTile(getRandomTinOreTile());
+                currTask.setBank(BankLocation.VARROCK_EAST);
+                print("Setting new tile for tin ore " + currTask.getStartTile());
+            }
         }
-        if (random == 126 && Objects.equals(state.toString(), "MINE")  && getLocal().getAnimation() == -1) {
-            print("Switching to Tin ore");
-            currTask.setOreName("Tin ore");
-            currTask.setIDs(new int[]{11361,11360});
-            currTask.setStarTile(getRandomTinOreTile());
-            print("Setting new tile for tin ore " + currTask.getStartTile());
-        }
-        /*
-        if (random == 46 && Objects.equals(state.toString(), "MINE")){
-            print("Switching to Iron ore");
-            currTask.setOreName("Iron ore");
-            currTask.setIDs(new int[]{11365,11364});
-            currTask.setStarTile(getRandomTile());
-        }*/
         if (random == 100) {
             Camera.rotateToPitch((int) (Calculations.random(250, 400) * Client.seededRandom()));
         }
@@ -749,7 +817,6 @@ public class Miner extends AbstractScript {
         if (random == 221) {
             Camera.rotateToYaw((int) (Calculations.random(100, 1600) * Client.seededRandom()));
         }
-
     }
 
     private void AFK() {
@@ -828,7 +895,7 @@ public class Miner extends AbstractScript {
         } else {
             List<GameObject> rocks = GameObjects.all(new Filter<GameObject>() {
                 public boolean match(GameObject go) {
-                    if (go == null || !go.exists() || go.getName() == null || !go.getName().equals("Rocks"))
+                    if (go == null || !go.exists() || go.getName() == null || !(go.getName().length() > 6))
                         return false;
                     if (!go.isOnScreen()) return false;
                     return true;
