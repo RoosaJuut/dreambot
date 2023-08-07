@@ -38,7 +38,7 @@ public class MineTask {
 	}
 
 	private final Filter<GameObject> rockFilter = go -> {
-		if(go == null || !go.exists() || go.getName() == null || !(go.getName().length() > 6))
+		if(go == null || !go.exists() || go.getName() == null || !(go.getName().length() > 4))
 			return false;
 		boolean hasID = false;
 		for(int i = 0; i < getIDs().length; i++){
