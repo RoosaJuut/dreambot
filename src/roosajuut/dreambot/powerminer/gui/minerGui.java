@@ -90,6 +90,7 @@ public class minerGui extends JFrame {
 
 		final JCheckBox chckbxPowermine = new JCheckBox("Powermine");
 		final JCheckBox chckbxSmith = new JCheckBox("Smith");
+		final JCheckBox chckbxCombat = new JCheckBox("Combat");
 
 
 		JButton btnNewButton = new JButton("Start");
@@ -117,6 +118,11 @@ public class minerGui extends JFrame {
 		chckbxSmith.setBounds(54, 100, 97, 23);
 		contentPane.add(chckbxSmith);
 
+		chckbxCombat.setForeground(Color.WHITE);
+		chckbxCombat.setBackground(Color.BLACK);
+		chckbxCombat.setBounds(153, 100, 97, 23);
+		contentPane.add(chckbxCombat);
+
 		JLabel lblNewLabel = new JLabel("Ore Name:");
 		lblNewLabel.setForeground(Color.WHITE);
 		lblNewLabel.setBounds(10, 125, 67, 14);
@@ -142,6 +148,7 @@ public class minerGui extends JFrame {
 				Ores ores = Ores.values()[oreList.getSelectedIndex()];
 				boolean powermine = chckbxPowermine.isSelected();
 				boolean smith = chckbxSmith.isSelected();
+				boolean combat = chckbxCombat.isSelected();
 				String tileText = tileField.getText();
 				String[] tileVals = tileText.split(",");
 				int x = Integer.parseInt(tileVals[0]);
@@ -149,7 +156,7 @@ public class minerGui extends JFrame {
 				int z = Integer.parseInt(tileVals[2]);
 				Tile startTile = new Tile(x,y,z);
 				boolean dontMove = chckbxDontMove.isSelected();
-				MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores);
+				MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores, combat);
 				var.tasks.add(mt);
 				model1.addElement(mt.toString());
 				list.setModel(model1);
@@ -271,6 +278,8 @@ public class minerGui extends JFrame {
 			sb.add(""+mt.dontMove());
 			//sb.add("\
 			sb.add(""+mt.getOres());
+			//
+			sb.add(""+mt.isCombat());
 		}
 		//sb.add("END FILE");
 		fm.writeFile(sb, fileName);
@@ -330,8 +339,12 @@ public class minerGui extends JFrame {
 					break;
 				}
 			}
+			String combatString = content[i+9];
+			boolean combat = false;
+			if(combatString.toLowerCase().equals("true"))
+				combat = true;
 
-			MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores);
+			MineTask mt = new MineTask(oreName, ids, startTile, goal, powermine, smith, bank, dontMove, ores, combat);
 			System.out.println(mt.toString());
 			var.tasks.add(mt);
 			model1.addElement(mt.toString());

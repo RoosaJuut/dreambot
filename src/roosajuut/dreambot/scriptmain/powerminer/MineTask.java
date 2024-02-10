@@ -26,6 +26,7 @@ public class MineTask {
 	private int[] ids;
 	private boolean powermine = false;
 	private boolean smith = false;
+	private boolean combat = false;
 	private Timer t;
 	private String oreName = "";
 	private PricedItem oreTracker;
@@ -54,7 +55,7 @@ public class MineTask {
 		return true;
 	};
 
-	public MineTask(String oreName, int[] ids, Tile startTile, String goal, boolean powermine, boolean smith, BankLocation bank, boolean dontMove, Ores ores){
+	public MineTask(String oreName, int[] ids, Tile startTile, String goal, boolean powermine, boolean smith, BankLocation bank, boolean dontMove, Ores ores, boolean combat){
 		this.oreName = oreName;
 		this.ids = ids;
 		this.startTile = startTile;
@@ -65,6 +66,7 @@ public class MineTask {
 		this.bank = bank;
 		this.dontMove = dontMove;
 		this.ores = ores;
+		this.combat = combat;
 		t = new Timer();
 	}
 	
@@ -140,6 +142,9 @@ public class MineTask {
 	}
 	public boolean isSmith(){
 		return smith;
+	}
+	public boolean isCombat(){
+		return combat;
 	}
 	public Tile getStartTile(){
 		return startTile;

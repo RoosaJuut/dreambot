@@ -55,7 +55,7 @@ import java.util.Objects;
 
 import static org.dreambot.api.methods.interactive.Players.*;
 
-@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.84, category = Category.MINING)
+@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.86, category = Category.MINING)
 public class Miner extends AbstractScript {
     Area EDGE_BANK = new Area(3095, 3496, 3095, 3494, 0);
     Area FURNACE = new Area(3109, 3499, 3108, 3498, 0);
@@ -84,6 +84,8 @@ public class Miner extends AbstractScript {
     private Boolean isDuckHunt = false;
     private Boolean isGuardKiller = false;
     private Boolean isGiantFrogKiller = true;
+    private Boolean buryBones = true;
+    private String weapon = "Maple Shortbow";
 
     private NPC closestNoob = null;
 
@@ -101,6 +103,8 @@ public class Miner extends AbstractScript {
     private MethodProvider mp;
     private ChatListener chatListener;
     private TestScript testScript = null;
+
+    //private boolean isCombat = true;
     Bank bank;
     Inventory inv;
     private enum State {
@@ -114,7 +118,7 @@ public class Miner extends AbstractScript {
         //if (getLocal().isInCombat()) {
         //    return State.COMBAT;
         //}
-        if (Equipment.contains("Maple shortbow")) {
+        if (Equipment.contains(weapon) && currTask.isCombat()) {
             return State.COMBAT;
         }
         if (currTask.isPowerMine()) {
@@ -463,7 +467,7 @@ public class Miner extends AbstractScript {
                 break;
             case COMBAT:
                 WidgetChild chatMessage = Widgets.get(162, 56, 1);
-                Message message = new Message(4, "", chatMessage.getText().toLowerCase() , 0);
+                Message message = new Message(4, "", chatMessage.getText().toLowerCase(), 0);
                 onGameMessage(message);
                 print("testing chat " + chatMessage.getText());
                 while (!Inventory.contains("Trout") && !getLocal().isInCombat()) {
@@ -536,19 +540,21 @@ public class Miner extends AbstractScript {
                     //if (closestPlayer != null) {
                     //    int random = Calculations.random(1, 10);
                     //    if (random == 1) {
-                    //        WorldHopper.quickHop(91);
+                    //        WorldHopper.quickHop(134);
                     //    }
                     //    if (random == 2) {
-                    //        WorldHopper.quickHop(92);
+                    //        WorldHopper.quickHop(136);
                     //    }
                     //}
                 NPC isAttackingPlayer = NPCs.closest(attackingPlayer);
-                    if (Inventory.count("Big bones") > Calculations.random(1, 10) && getLocal().getInteractingIndex() == -1) {
-                        while (Inventory.count("Big bones") > 0) {
-                            Inventory.interact("Big bones");
+                    if (buryBones) {
+                        if (Inventory.count("Big bones") > Calculations.random(1, 10) && getLocal().getInteractingIndex() == -1) {
+                            while (Inventory.count("Big bones") > 0) {
+                                Inventory.interact("Big bones");
+                                Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
+                            }
                             Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
                         }
-                        Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
                     }
                     if (groundItem != null && !Inventory.isFull() && getLocal().getInteractingIndex() == -1) {
                     groundItem.interact("Take");
@@ -567,7 +573,7 @@ public class Miner extends AbstractScript {
                             print("Testing new" + frogFilter);
                         }
                     }
-                if (Equipment.contains("Maple shortbow") && isGuardKiller) {
+                if (Equipment.contains(weapon) && isGuardKiller) {
                     test(GUARD_KILLER_2);
                     test(GUARD_KILLER_1);
                 }
@@ -976,6 +982,23 @@ public class Miner extends AbstractScript {
                     Tabs.openWithMouse(Tab.SKILLS);
                     sleep(300, 500);
                     Skills.hoverSkill(Skill.MINING);
+                    sleep(2000, 4000);
+                    Tabs.openWithMouse(Tab.INVENTORY);
+                    sleep(100, 300);
+                }
+            }
+            else if (Objects.equals(state.toString(), "COMBAT") && getLocal().getEquipment().contains("bow")) {
+                print("Checking Ranged skill");
+                int randLoop = Calculations.random(0, 1);
+                int x = 0;
+
+                while (x <= randLoop) {
+                    x++;
+
+
+                    Tabs.openWithMouse(Tab.SKILLS);
+                    sleep(300, 500);
+                    Skills.hoverSkill(Skill.RANGED);
                     sleep(2000, 4000);
                     Tabs.openWithMouse(Tab.INVENTORY);
                     sleep(100, 300);
