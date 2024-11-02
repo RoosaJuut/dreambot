@@ -1,19 +1,8 @@
 package roosajuut.dreambot.scriptmain.powerminer;
 
-import org.dreambot.api.input.Keyboard;
-import org.dreambot.api.methods.container.impl.bank.BankLocation;
-import org.dreambot.api.methods.container.impl.equipment.Equipment;
-import org.dreambot.api.methods.interactive.NPCs;
-import org.dreambot.api.methods.item.GroundItems;
-import org.dreambot.api.methods.worldhopper.WorldHopper;
-import org.dreambot.api.script.listener.ChatListener;
-import org.dreambot.api.wrappers.interactive.Character;
-import org.dreambot.api.wrappers.interactive.NPC;
-import org.dreambot.api.wrappers.items.GroundItem;
-import org.dreambot.api.wrappers.widgets.message.Message;
-import roosajuut.dreambot.powerminer.gui.ScriptVars;
-import roosajuut.dreambot.powerminer.gui.minerGui;
+import com.sun.istack.internal.Interned;
 import org.dreambot.api.Client;
+import org.dreambot.api.input.Keyboard;
 import org.dreambot.api.input.Mouse;
 import org.dreambot.api.input.event.impl.mouse.impl.click.ClickMode;
 import org.dreambot.api.input.mouse.destination.impl.EntityDestination;
@@ -21,11 +10,15 @@ import org.dreambot.api.methods.Calculations;
 import org.dreambot.api.methods.MethodProvider;
 import org.dreambot.api.methods.container.impl.Inventory;
 import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.container.impl.bank.BankLocation;
+import org.dreambot.api.methods.container.impl.equipment.Equipment;
 import org.dreambot.api.methods.dialogues.Dialogues;
 import org.dreambot.api.methods.filter.Filter;
 import org.dreambot.api.methods.input.Camera;
 import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.interactive.NPCs;
 import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.item.GroundItems;
 import org.dreambot.api.methods.map.Area;
 import org.dreambot.api.methods.map.Map;
 import org.dreambot.api.methods.map.Tile;
@@ -39,24 +32,37 @@ import org.dreambot.api.methods.widget.Widgets;
 import org.dreambot.api.script.AbstractScript;
 import org.dreambot.api.script.Category;
 import org.dreambot.api.script.ScriptManifest;
+import org.dreambot.api.script.listener.ChatListener;
 import org.dreambot.api.utilities.Sleep;
 import org.dreambot.api.utilities.Timer;
 import org.dreambot.api.utilities.impl.Condition;
+import org.dreambot.api.wrappers.interactive.Character;
 import org.dreambot.api.wrappers.interactive.GameObject;
+import org.dreambot.api.wrappers.interactive.NPC;
 import org.dreambot.api.wrappers.interactive.Player;
+import org.dreambot.api.wrappers.items.GroundItem;
 import org.dreambot.api.wrappers.items.Item;
 import org.dreambot.api.wrappers.widgets.Menu;
 import org.dreambot.api.wrappers.widgets.WidgetChild;
+import org.dreambot.api.wrappers.widgets.message.Message;
+import roosajuut.dreambot.powerminer.gui.ScriptVars;
+import roosajuut.dreambot.powerminer.gui.minerGui;
+import roosajuut.dreambot.scriptmain.powerminer.Combat;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
 
-import static org.dreambot.api.methods.interactive.Players.*;
+import static org.dreambot.api.methods.interactive.Players.all;
+import static org.dreambot.api.methods.interactive.Players.getLocal;
 
-@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.86, category = Category.MINING)
+@ScriptManifest(author = "Hents", description = "Power Miner/Smelter", name = "DreamBot Power Miner", version = 1.894, category = Category.MINING)
 public class Miner extends AbstractScript {
+
+    Combat combat;
     Area EDGE_BANK = new Area(3095, 3496, 3095, 3494, 0);
     Area FURNACE = new Area(3109, 3499, 3108, 3498, 0);
     Area AL_KHARID_FURNACE = new Area(3275, 3186, 3276,3187, 0);
@@ -86,38 +92,48 @@ public class Miner extends AbstractScript {
     private Boolean isGiantFrogKiller = true;
     private Boolean buryBones = true;
     private String weapon = "Maple Shortbow";
-
     private NPC closestNoob = null;
-
     private GroundItem groundItem = null;
-
     private Player closestPlayer = null;
     private NPC closestNPC = null;
-
-    //private Tile startTile = null;
     private MineTask currTask = null;
     private int taskPlace = 0;
     private boolean started = false;
     private minerGui gui = null;
-    //private NPC closestNPC;
     private MethodProvider mp;
     private ChatListener chatListener;
     private TestScript testScript = null;
+    private JCheckBox checkBox;
+    private JComboBox<String> monsterSelector;
+    private JFrame frame;
+    private AntiPattern antiPattern;
 
-    //private boolean isCombat = true;
+
     Bank bank;
     Inventory inv;
     private enum State {
-        MINE, DROP, BANK, GUI, SMITH, COMBAT
+        MINE, DROP, BANK, GUI, SMITH, COMBAT, BURY_BONES, PICKING_UP_ITEM
     }
 
     private State getState() {
+
         if (!started) {
             return State.GUI;
         }
-        //if (getLocal().isInCombat()) {
-        //    return State.COMBAT;
-        //}
+        if (checkBox.isSelected()) {
+            GroundItem allowedItems = GroundItems.closest(bigBones);
+            if (allowedItems != null && !Inventory.isFull()) {
+                if (getLocal().getInteractingIndex() == -1 || !getLocal().isInCombat()) {
+                        return State.PICKING_UP_ITEM;
+                }
+            }
+        }
+
+        if (buryBones) {
+            if (Inventory.count("Big bones") > Calculations.random(1, 10) && getLocal().getInteractingIndex() == -1) {
+                return State.BURY_BONES;
+            }
+        }
         if (Equipment.contains(weapon) && currTask.isCombat()) {
             return State.COMBAT;
         }
@@ -139,6 +155,61 @@ public class Miner extends AbstractScript {
     @Override
     public void onStart() {
         print("Starting DreamBot's AIO Mining script!");
+        SwingUtilities.invokeLater(() -> {
+            frame = new JFrame("It's sick it's piss");
+            //frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+            checkBox = new JCheckBox("Pick Up Big Bones");
+            // Default to enabled
+            checkBox.setBounds(20, 20, 200, 30);
+            checkBox.addActionListener(new ActionListener() {
+                public void actionPerformed(ActionEvent e) {
+                    // Checkbox action performed
+                    if (checkBox.isSelected()) {
+                        log("Big Bones pickup enabled.");
+                    } else {
+                        log("Big Bones pickup disabled.");
+                    }
+                }
+            });
+            JComboBox<String> monsterSelector = createMonsterSelector();
+            monsterSelector.setBounds(20, 60, 200, 30);  // Position it below the checkbox
+
+            frame.add(checkBox);
+            frame.add(monsterSelector);
+
+            frame.setSize(300, 150);
+            frame.setLayout(null);
+            frame.setVisible(true);
+        });
+    }
+
+    private JComboBox<String> createMonsterSelector() {
+        Set<String> npcNames = new HashSet<>();
+        List<NPC> visibleNPCs = NPCs.all();
+        for (NPC npc : visibleNPCs) {
+            if (npc.getName() != null) {
+                npcNames.add(npc.getName());
+            }
+        }
+
+        // Convert the list of names to a String array
+        String[] monsters = npcNames.toArray(new String[0]);
+        monsterSelector = new JComboBox<>(monsters);
+
+        if (npcNames.contains("Giant frog")) {
+            monsterSelector.setSelectedItem("Giant frog");
+        } else {
+            monsterSelector.setSelectedIndex(-1); // No selection if "Giant Frog" is not found
+        }
+
+        // Add an ActionListener to detect when the user selects a new monster
+        monsterSelector.addActionListener(e -> {
+            String selectedMonster = (String) monsterSelector.getSelectedItem();
+            System.out.println("Monster selected: " + selectedMonster);
+        });
+
+        return monsterSelector;
     }
 
     @Override
@@ -200,402 +271,41 @@ public class Miner extends AbstractScript {
                         SwingUtilities.invokeLater(() -> currTask.resetTimer());
                         SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.SMITHING));
                         SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.MINING));
+                        SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.RANGED));
+                        SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.PRAYER));
+                        SwingUtilities.invokeLater(() -> SkillTracker.start(Skill.DEFENCE));
                         SwingUtilities.invokeLater(() -> timer = new Timer());
                         SwingUtilities.invokeLater(() -> started = true);
+                        SwingUtilities.invokeLater(() -> checkBox.setSelected(true));
+                        SwingUtilities.invokeLater(() -> {
+                            if (monsterSelector == null) {  // Only create if it doesn't already exist
+                                System.out.println("Creating monsterSelector");
+                                monsterSelector = createMonsterSelector(); // Create JComboBox if not already done
+                            }
+                        });
                     }
                 }
                 break;
             case BANK:
-                print("Switching to case BANK");
-                if (bank.isOpen()) {
-                    if (inv.get(new Filter<Item>() {
-                        public boolean match(Item i) {
-                            if (i == null || i.getName() == null) {
-                                return false;
-                            }
-                            return i.getName().contains("pickaxe");
-                        }
-                    }) != null) {
-                        for (int i = 0; i < 28; i++) {
-                            final Item item = inv.getItemInSlot(i);
-                            if (item != null && !item.getName().contains("pickaxe")) {
-                                bank.depositAll(item.getName());
-                                Sleep.sleepUntil(() -> !inv.contains(item.getName()), 2000);
-                            }
-
-                        }
-                    } else {
-                        Bank.depositAllItems();
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return Inventory.isEmpty() && getLocal().getHealthPercent() == 100;
-                            }
-                        }, 2000);
-
-                    }
-                } else {
-                    if (currTask.getBank().getArea(Calculations.random(7,10)).contains(getLocal()))
-                    {
-                        Bank.open();
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return Bank.isOpen();
-                            }
-                        }, 2000);
-                    }
-                    else {
-                        print("Liigun panka!");
-                        Walking.walk(currTask.getBank().getCenter());
-                        AntiPattern();
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return getLocal().isMoving();
-                            }
-                        }, 2000);
-                    }
-                }
+                startBankTask();
                 break;
             case DROP:
-                print("Started drop");
-                currRock = null;
-                Item ore = inv.get(currTask.getOreName());
-                if (ore != null) {
-                    inv.interact(ore.getName(), "Drop");
-                    Sleep.sleepUntil(new Condition() {
-                        public boolean verify() {
-                            Item ore = inv.get(currTask.getOreName());
-                            return ore == null;
-                        }
-                    }, 1200);
-                }
+                startDropTask();
                 break;
             case SMITH:
-                int copperOreCount = Bank.count("Copper ore");
-                int tinOreCount = Bank.count("Tin ore");
-                int ironOreCount = Bank.count("Iron ore");
-                if (copperOreCount > 1000 && tinOreCount > 1000) {
-                    currTask.setOreName("Bronze bar");
-                }
-                if (ironOreCount > 100) {
-                    currTask.setOreName("Iron bar");
-                }
-                print("Changing task to " + currTask.getOreName());
-                currTask.setBank(BankLocation.EDGEVILLE);
-                print("Changing bank location to " + currTask.getBank());
-                if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Bronze bar")) {
-                    currTask.setGoal("mine=" + Math.min(copperOreCount, tinOreCount));
-                }
-                if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Iron bar")) {
-                    currTask.setGoal("mine=" + ironOreCount);
-                }
-                Bank.getClosestBankLocation();
-                grabBronzeBarsToSmelt();
-                WalkToFurnace();
-                InteractWithFurnace();
+                startSmithTask();
                 break;
             case MINE:
-                //currTask.setOreName("Copper ore");
-                //currTask.setBank(BankLocation.VARROCK_EAST);
-                if (!Tab.INVENTORY.isOpen()) {
-                    Tabs.openWithMouse(Tab.INVENTORY);
-                    sleep(300, 500);
-                }
-                NPC strayDog = NPCs.closest("Stray dog");
-                if (strayDog != null && strayDog.isOnScreen() && strayDog.isInCombat() && strayDog.canReach(getLocal().getTile())) {
-                    int random = Calculations.random(1,50);
-                    print("Stray dog anti pattern " + random);
-                    if (random == 1) {
-                        strayDog.interact("Pet");
-                    }
-                    if (random == 25) {
-                        strayDog.interact("Shoo-away");
-                    }
-                    Sleep.sleepUntil(() -> !strayDog.isInCombat(), 1200);
-                }
-                if (Bank.isOpen()) {
-                    bank.close();
-
-                    print("Bank closed! Going to " + getState());
-                    Sleep.sleepUntil(new Condition() {
-                        public boolean verify() {
-                            return !bank.isOpen();
-                        }
-                    }, 1200);
-                }
-                else {
-                    if (Inventory.contains("Bronze pickaxe")) {
-                        Inventory.interact("Bronze pickaxe", "Wield");
-                    } else if  (Inventory.contains("Iron pickaxe")) {
-                        Inventory.interact("Iron pickaxe", "Wield");
-                    }
-                    else if (currTask.getStartTile().distance(getLocal()) > 10) {
-                        Walking.walk(currTask.getStartTile());
-                        //AntiPattern();
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return getLocal().isMoving();
-                            }
-                        }, 2000);
-                    } else if ((currTask.dontMove() && !getLocal().getTile().equals(currTask.getStartTile()))) {
-                        print("liigun");
-                        Walking.walk(currTask.getStartTile());
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return getLocal().isMoving();
-                            }
-                        }, 2000);
-                        Sleep.sleepUntil(new Condition() {
-                            public boolean verify() {
-                                return !getLocal().isMoving();
-                            }
-                        }, 2000);
-                    } //kui dont move on checked
-                    else {
-                        if (Camera.getPitch() < 270) {
-                            Camera.rotateToPitch((int) (Calculations.random(300, 400) * Client.seededRandom()));
-                        }
-                        if (getLocal().getAnimation() == -1 && (currRock == null || !currRock.isOnScreen() || !currTask.isPowerMine())) {
-                            print("Going to find " + currTask.getRock());
-                            currRock = currTask.getRock();//getGameObjects().getClosest(currTask.getIDs());
-                        }
-                        if (getLocal().getAnimation() == -1 || (getLocal().getAnimation() == 624 && currRock == null)) {
-                            print("Running mining sequence");
-                            if (currRock != null && currRock.exists() && getLocal().getTile().equals(currTask.getStartTile())) {
-                                currRock.interact("Mine");
-                                print("Starting to mine " + currTask.getRock());
-                                AntiPattern();
-                                if (currRock.interact("Mine")) {
-                                    print("Mining");
-                                    sleep(100,300);
-                                    if (currTask.isPowerMine()) {
-                                        hover(true);
-                                    } else {
-                                        print("Current start tile is " + currTask.getStartTile());
-                                        print("Current player tile is " + getLocal().getTile());
-                                        if (currTask.getStartTile() != getLocal().getTile() && getLocal().getAnimation() == 1) {
-                                            print("Start tile is not equal to current tile");
-                                            print("Walking to start tile");
-                                            Walking.walk(currTask.getStartTile());
-                                        }
-                                        //Sleep.sleepUntil(() -> currRock.getTile() != null, 1800);
-                                        //print("Testing null");
-                                        //Sleep.sleepUntil(() -> currRock == null, 200);
-
-                                        //Sleep.sleepUntil(() -> getLocal().getAnimation() != -1, 2000);
-                                        //print("Sleeping1");
-                                        //Sleep.sleepUntil(() -> getLocal().getAnimation() == -1, 1800);
-                                        //print("Sleeping2");
-                                        //sleep(0, 100);
-                                    }
-                                }
-                            }
-                        }
-
-                        if (currRock == null && getLocal().getAnimation() == 624) {
-                            print("Testing feil2 " + getLocal().getAnimation());
-                            print("Testing feil2 " + currTask.getRock());
-                            currRock.interact("Mine");
-                        }
-                        if (getLocal().getAnimation() == -1) {
-                            if (Objects.equals(currTask.getOreName(), "Tin ore")) {
-                                print("Mining tin ore");
-                            }
-                            if (Objects.equals(currTask.getOreName(), "Copper ore")) {
-                                print("Mining copper ore");
-                            }
-                            if (Objects.equals(currTask.getOreName(), "Iron ore")) {
-                                if (currRock != null) {
-                                    print("Mining " + currRock.getName() + " ore " + currRock.getTile());
-                                }
-                            }
-
-                            Sleep.sleepWhile(() -> getLocal().getAnimation() == 625, 20000);
-                            //AntiPattern();
-                        }
-
-                        if (getLocal().getAnimation() == -1 && !currTask.getStartTile().equals(getLocal().getTile())) {
-                            Walking.walk(currTask.getStartTile());
-                            print("Walking to " + currTask.getStartTile() + " tile");
-                        }
-                        List<Player> allPlayers = Players.all();
-                        allPlayers.remove(getLocal());
-                        //If other player is mining on same tile, find new one.
-                        if (allPlayers.size() > 0) {
-                            //Player closestPlayer = allPlayers.get(closest(0-1));
-                            Player randomPlayer = allPlayers.get(Calculations.random(allPlayers.size()));
-                            Tile PlayerOnSameTile = randomPlayer.getTile();
-                            String PlayerName = randomPlayer.getName();
-
-
-                            //If Ore name = Copper ore and current tile is occupied by someone else get new tile
-                            if (PlayerOnSameTile.equals(currTask.getStartTile()) && Objects.equals(currTask.getOreName(), "Copper ore")) {
-                                int randomNr = Calculations.random(1, 3);
-                                print("Getting new " + currTask.getRock() + " tile " + randomNr);
-                                if (randomNr == 1 && !getLocal().getTile().equals(currTask.getStartTile())) {
-                                    currTask.setStarTile(COPPER_ORE_1);
-                                }
-                                if (randomNr == 2 && !getLocal().getTile().equals(currTask.getStartTile())) {
-                                    currTask.setStarTile(COPPER_ORE_2);
-                                }
-                                if (randomNr == 3 && !getLocal().getTile().equals(currTask.getStartTile())) {
-                                    currTask.setStarTile(COPPER_ORE_3);
-                                }
-                                print("player on same Tile " + PlayerOnSameTile + ' ' + PlayerName);
-                            }
-                            //If Ore name = Tin ore and current tile is occupied by someone else get new tile
-                            if (PlayerOnSameTile.equals(currTask.getStartTile()) && Objects.equals(currTask.getOreName(), "Tin ore")) {
-                                int randomNr = Calculations.random(1, 3);
-                                print("Getting new " + currTask.getRock() + " tile " + randomNr);
-                                if (randomNr == 1) {
-                                    currTask.setStarTile(TIN_ORE_1);
-                                }
-                                if (randomNr == 2) {
-                                    currTask.setStarTile(TIN_ORE_2);
-                                }
-                                if (randomNr == 3) {
-                                    currTask.setStarTile(TIN_ORE_3);
-                                }
-                                print("player on same Tile " + PlayerOnSameTile + ' ' + PlayerName);
-                            }
-                        }
-                        //print("player on same tile" + newTile + PlayerName);
-
-                        sleep(100, 300);
-                    }
-                }
-                currTask.getTracker().update();
+                startMineTask();
                 break;
             case COMBAT:
-                WidgetChild chatMessage = Widgets.get(162, 56, 1);
-                Message message = new Message(4, "", chatMessage.getText().toLowerCase(), 0);
-                onGameMessage(message);
-                print("testing chat " + chatMessage.getText());
-                while (!Inventory.contains("Trout") && !getLocal().isInCombat()) {
-                    {
-                        Bank.open();
-                        sleep(500, 1000);
-                        Bank.depositAllItems();
-                        Bank.withdraw("Trout", 26);
-                        Bank.close();
-                        sleep(500,1000);
-                        Sleep.sleepUntil(() -> getLocal().getHealthPercent() > 90, 2000);
-                    }
-                }
-                    if (getLocal().getHealthPercent() < 70) {
-                        Inventory.interact("Trout");
-                    }
-                    //Always sets camera behind player
-                    if (getLocal().getOrientation() != Camera.getYaw()) {
-                        int random = Calculations.random(0,10);
-                        if (random == 1) {
-                            Camera.rotateToYawEvent((getLocal().getOrientation() - 1024) * -1);
-                        }
-                    }
-                    if (Camera.getPitch() < 200) {
-                        Camera.rotateToPitchEvent(Calculations.random(230, 300));
-                        Camera.setZoom(Calculations.random(400, 500));
-                    }
-                    if (isDuckHunt) {
-                        currTask.setStarTile(DUCK_HUNTER_1);
-                        closestNoob = NPCs.closest("Duck");
-                        //Boolean playerAttackedBy = getLocal().getCharacterInteractingWithMe().getName().equals("Duck");
-
-                        if (!getLocal().isInCombat() && !closestNoob.isInCombat() && closestNoob != null) {
-                            if (closestNoob.distance(getLocal()) < 10) {
-                                closestNoob.interact("Attack");
-                                print("Testing " + closestNoob.canReach(getLocal().getTile()));
-                            }
-                        }
-                        sleep(300, 600);
-                        if (!getLocal().isInCombat() && closestNoob.isInCombat() && closestNoob != null) {
-                            closestNoob.interact("Attack");
-                        }
-                        if (!currTask.getStartTile().getArea(Calculations.random(7, 10)).contains(getLocal()) && !getLocal().isInCombat()) {
-                            Walking.walk(currTask.getStartTile());
-                            print("Player is too far. Returning to start tile for duck hunting");
-                        }
-                        sleep(100, 300);
-                        print("Testing " + closestNoob.canReach(getLocal().getTile()));
-                        print("Testing new " + (closestNoob.distance(getLocal().getTile()) < 10));
-                        print("Attacking " + closestNoob);
-                        AntiPattern();
-                        print("Healt is at " + getLocal().getHealthPercent() + "%");
-                    }
-                    if (isGuardKiller) {
-                        currTask.setStarTile(GUARD_KILLER_1);
-                        closestNoob = NPCs.closest("Guard");
-                        groundItem = GroundItems.closest("Adamant arrow", "Bones", "Coins", "Nature rune");
-                    }
-                    if (isGiantFrogKiller) {
-                        currTask.setStarTile(FROG_KILLER_1);
-                        closestNoob = NPCs.closest(frogFilter);
-                        groundItem = GroundItems.closest(bigBones);
-                        closestPlayer = Players.closest(checkAreaForPlayer);
-                        closestNPC = NPCs.closest(filterNPCsWhoAreCloseToOtherPlayers);
-                    }
-                    if (closestPlayer != null) {
-                        print("Player close " + closestPlayer);
-                        print("NPC " + closestNPC + " is out of range from " + closestPlayer);
-                    }
-                    //if (closestPlayer != null) {
-                    //    int random = Calculations.random(1, 10);
-                    //    if (random == 1) {
-                    //        WorldHopper.quickHop(134);
-                    //    }
-                    //    if (random == 2) {
-                    //        WorldHopper.quickHop(136);
-                    //    }
-                    //}
-                NPC isAttackingPlayer = NPCs.closest(attackingPlayer);
-                    if (buryBones) {
-                        if (Inventory.count("Big bones") > Calculations.random(1, 10) && getLocal().getInteractingIndex() == -1) {
-                            while (Inventory.count("Big bones") > 0) {
-                                Inventory.interact("Big bones");
-                                Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
-                            }
-                            Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
-                        }
-                    }
-                    if (groundItem != null && !Inventory.isFull() && getLocal().getInteractingIndex() == -1) {
-                    groundItem.interact("Take");
-                    print("Picking up " + groundItem.getName());
-                    //Sleep.sleepUntil(() -> !getLocal().isMoving(), 1000);
-                    if (groundItem != null && Inventory.count("Adamant arrow") > Calculations.random(1, 100)) {
-                        Inventory.interact("Adamant Arrow");
-                    }
-                }
-                    //Attacking Giant frogs that are not in combat
-                if (!getLocal().isInCombat() && closestNoob != null && closestNoob.getIndex() != 1137 && groundItem == null) {
-                        if (closestNoob.distance(getLocal()) < 10) {
-                            //closestNoob = NPCs.closest(frogFilter);
-                            closestNoob.interact("Attack");
-                            print("Testing " + closestNoob.canReach(getLocal().getTile()));
-                            print("Testing new" + frogFilter);
-                        }
-                    }
-                if (Equipment.contains(weapon) && isGuardKiller) {
-                    test(GUARD_KILLER_2);
-                    test(GUARD_KILLER_1);
-                }
-                //Needs work
-                if (!currTask.getStartTile().getArea(Calculations.random(10, 15)).contains(getLocal()) && !getLocal().isInCombat() && groundItem == null) {
-                    Walking.walk(currTask.getStartTile());
-                    print("Player is too far. Returning to start tile for duck hunting");
-                }
-                if (groundItem != null) {
-                    print("Testing distance " + groundItem.getTile().distance(getLocal()));
-                }
-                AntiPattern();
-                print("Healt is at " + getLocal().getHealthPercent() + "%");
-                //print("Frog is in combat? " + closestNoob.isInCombat());
-                //print("Frog interacting with player? " + closestNoob.isInteracting(getLocal()));
-                //closestNoob = NPCs.closest(attackingPlayer);
-                print("Correct frog is interacting with player? " + closestNoob);
-                    while (Dialogues.canContinue()) {
-                    Dialogues.spaceToContinue();
-                    sleep(1000, 1500);
-                    }
-                    sleep(300, 600);
+                startCombatTask();
+                break;
+            case BURY_BONES:
+                startBuryBonesTask();
+                break;
+            case PICKING_UP_ITEM:
+                startPickingUpItemTask();
                 break;
         }
         return 200;
@@ -1049,7 +759,7 @@ public class Miner extends AbstractScript {
             }
         }
     }
-    private State combat() {
+    public State combat() {
         return State.COMBAT;
     }
 
@@ -1114,22 +824,41 @@ public class Miner extends AbstractScript {
     @Override
     public void onExit() {
         gui.setVisible(false);
-        log("Stopping testing!");
+        checkBox.setVisible(false);
+        monsterSelector.setVisible(false);
+
+        SwingUtilities.invokeLater(() -> {
+            if (frame != null) {
+                frame.dispose(); // This will dispose of the `Script Controls` window
+            }
+            log("Stopping testing!");
+        });
+
     }
 
     public void onPaint(Graphics g) {
+
+        GroundItem allowedItems = GroundItems.closest(bigBones);
         if (started) {
             g.setColor(Color.green);
-            if (state != null) g.drawString("State: " + state.toString(), 5, 50);
+            if (state != null) g.drawString("State: " + state, 5, 50);
+            if (allowedItems != null && state.equals(State.PICKING_UP_ITEM)) g.drawString( allowedItems.toString(), 150, 50);
             g.drawString("Total Runtime: " + timer.formatTime(), 5, 65);
             g.drawString("Task Runtime: " + currTask.getTimer().formatTime(), 5, 80);
             g.drawString("MINING EXP", 180, 75);
-            g.drawString("Experience(p/h): " + SkillTracker.getGainedExperience(Skill.MINING) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.MINING) + ")", 180, 95);
-            g.drawString("Level(gained): " + Skills.getRealLevel(Skill.MINING) + "(" + SkillTracker.getGainedLevels(Skill.MINING) + ")", 180, 110);
-            g.drawString("Experience(p/h): " + SkillTracker.getGainedExperience(Skill.SMITHING) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.SMITHING) + ")", 5, 95);
-            g.drawString("Level(gained): " + Skills.getRealLevel(Skill.SMITHING) + "(" + SkillTracker.getGainedLevels(Skill.SMITHING) + ")", 5, 110);
-            g.drawString("Ores(p/h): " + currTask.getTracker().getAmount() + "(" + timer.getHourlyRate(currTask.getTracker().getAmount()) + ")", 10, 125);
-            g.drawString("Current task: " + currTask.getOreName() + "::" + currTask.getGoal(), 10, 140);
+            //g.drawString("Experience(p/h): " + SkillTracker.getGainedExperience(Skill.MINING) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.MINING) + ")", 180, 95);
+            //g.drawString("Level(gained): " + Skills.getRealLevel(Skill.MINING) + "(" + SkillTracker.getGainedLevels(Skill.MINING) + ")", 180, 110);
+            //g.drawString("Experience(p/h): " + SkillTracker.getGainedExperience(Skill.SMITHING) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.SMITHING) + ")", 5, 95);
+            //g.drawString("Level(gained): " + Skills.getRealLevel(Skill.SMITHING) + "(" + SkillTracker.getGainedLevels(Skill.SMITHING) + ")", 5, 110);
+            g.drawString("RANGED(p/h): " + SkillTracker.getGainedExperience(Skill.RANGED) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.RANGED) + ")", 5, 95);
+            g.drawString("Level(gained): " + Skills.getRealLevel(Skill.RANGED) + "(" + SkillTracker.getGainedLevels(Skill.RANGED) + ")", 5, 110);
+            g.drawString("PRAYER(p/h): " + SkillTracker.getGainedExperience(Skill.PRAYER) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.PRAYER) + ")", 5, 125);
+            g.drawString("Level(gained): " + Skills.getRealLevel(Skill.PRAYER) + "(" + SkillTracker.getGainedLevels(Skill.PRAYER) + ")", 5, 140);
+            g.drawString("DEFENCE(p/h): " + SkillTracker.getGainedExperience(Skill.DEFENCE) + "(" + SkillTracker.getGainedExperiencePerHour(Skill.DEFENCE) + ")", 5, 155);
+            g.drawString("Level(gained): " + Skills.getRealLevel(Skill.DEFENCE) + "(" + SkillTracker.getGainedLevels(Skill.DEFENCE) + ")", 5, 170);
+            //g.drawString("Ores(p/h): " + currTask.getTracker().getAmount() + "(" + timer.getHourlyRate(currTask.getTracker().getAmount()) + ")", 10, 125);
+            //g.drawString("Current task: " + currTask.getOreName() + "::" + currTask.getGoal(), 10, 140);
+
             for (int i = 0; i < sv.tasks.size(); i++) {
                 MineTask mt = sv.tasks.get(i);
                 if (mt != null) {
@@ -1139,7 +868,7 @@ public class Miner extends AbstractScript {
                         g.setColor(Color.red);
                     }
                     String task = mt.getOreName() + "::" + mt.getGoal();
-                    g.drawString(task, 10, 155 + i * 15);
+                    g.drawString(task, 10, 185 + i * 15);
                 }
             }
         } else {
@@ -1161,7 +890,6 @@ public class Miner extends AbstractScript {
             }
         }
     }
-
     public boolean walkOnScreen(Tile t) {
         Mouse.move(Client.getViewportTools().tileToScreen(t));
         String action = Menu.getDefaultAction();
@@ -1177,10 +905,16 @@ public class Miner extends AbstractScript {
             return Menu.clickAction("Walk here");
         }
     }
-    private final Filter<NPC> frogFilter = go -> !go.isInCombat() && go.getName().equals("Giant frog");
+    //private final Filter<NPC> frogFilter = go -> !go.isInCombat() && go.getName().equals("Giant frog");
+    private final Filter<NPC> frogFilter = go -> !go.isInCombat() && go.getName().equals(getSelectedMonster());
 
-    private final Filter<GroundItem> bigBones = gi -> (gi.getName().equals("Big bones") || gi.getName().equals("Adamant arrow")) && gi.getTile().distance(getLocal()) < 10;
+    private String getSelectedMonster() {
+        // Assuming monsterSelector is a JComboBox<String>
+        return (String) monsterSelector.getSelectedItem();
+    }
 
+    private final Filter<GroundItem> bigBones = gi -> ((gi.getName().equals("Big bones") || gi.getName().equals("Adamant arrow"))) && gi.getTile().distance(getLocal()) < 10;
+    //private final Filter<Inventory> itemsInInventory = go -> (go.equals("Big bones") || go.equals("Adamant arrow"));
     private final Filter<NPC> attackingPlayer = go -> go.isInteracting(getLocal());
 
     private final Filter<Player> checkAreaForPlayer = go -> go.getTile().distance(getLocal()) < 10 && !go.getName().equals(getLocal().getName());
@@ -1196,4 +930,455 @@ public class Miner extends AbstractScript {
     //    NPC closestNewb = null;
     //    return closestNewb;
     //}
+
+    private void startCombatTask() {
+        WidgetChild chatMessage = Widgets.get(162, 56, 1);
+        Message message = new Message(4, "", chatMessage.getText().toLowerCase(), 0);
+        onGameMessage(message);
+        print("testing chat " + chatMessage.getText());
+        while (!Inventory.contains("Trout") && !getLocal().isInCombat()) {
+            {
+                Bank.open();
+                sleep(500, 1000);
+                Bank.depositAllItems();
+                Bank.withdraw("Trout", 26);
+                Bank.close();
+                sleep(500,1000);
+                Sleep.sleepUntil(() -> getLocal().getHealthPercent() > 90, 2000);
+            }
+        }
+        if (getLocal().getHealthPercent() < 70) {
+            Inventory.interact("Trout");
+        }
+        //Always sets camera behind player
+        if (getLocal().getOrientation() != Camera.getYaw()) {
+            int random = Calculations.random(0,10);
+            if (random == 1) {
+                Camera.rotateToYawEvent((getLocal().getOrientation() - 1024) * -1);
+            }
+        }
+        if (Camera.getPitch() < 200) {
+            Camera.rotateToPitchEvent(Calculations.random(230, 300));
+            Camera.setZoom(Calculations.random(400, 500));
+        }
+        if (isDuckHunt) {
+            currTask.setStarTile(DUCK_HUNTER_1);
+            closestNoob = NPCs.closest("Duck");
+            //Boolean playerAttackedBy = getLocal().getCharacterInteractingWithMe().getName().equals("Duck");
+
+            if (!getLocal().isInCombat() && !closestNoob.isInCombat() && closestNoob != null) {
+                if (closestNoob.distance(getLocal()) < 10) {
+                    closestNoob.interact("Attack");
+                    print("Testing " + closestNoob.canReach(getLocal().getTile()));
+                }
+            }
+            sleep(300, 600);
+            if (!getLocal().isInCombat() && closestNoob.isInCombat() && closestNoob != null) {
+                closestNoob.interact("Attack");
+            }
+            if (!currTask.getStartTile().getArea(Calculations.random(7, 10)).contains(getLocal()) && !getLocal().isInCombat()) {
+                Walking.walk(currTask.getStartTile());
+                print("Player is too far. Returning to start tile for duck hunting");
+            }
+            sleep(100, 300);
+            print("Testing " + closestNoob.canReach(getLocal().getTile()));
+            print("Testing new " + (closestNoob.distance(getLocal().getTile()) < 10));
+            print("Attacking " + closestNoob);
+            AntiPattern();
+            print("Healt is at " + getLocal().getHealthPercent() + "%");
+        }
+        if (isGuardKiller) {
+            currTask.setStarTile(GUARD_KILLER_1);
+            closestNoob = NPCs.closest("Guard");
+            groundItem = GroundItems.closest("Adamant arrow", "Bones", "Coins", "Nature rune");
+        }
+        if (isGiantFrogKiller) {
+            currTask.setStarTile(FROG_KILLER_1);
+            closestNoob = NPCs.closest(frogFilter);
+            groundItem = GroundItems.closest(bigBones);
+            closestPlayer = Players.closest(checkAreaForPlayer);
+            closestNPC = NPCs.closest(filterNPCsWhoAreCloseToOtherPlayers);
+        }
+        if (closestPlayer != null) {
+            print("Player close " + closestPlayer);
+            print("NPC " + closestNPC + " is out of range from " + closestPlayer);
+        }
+        //if (closestPlayer != null) {
+        //    int random = Calculations.random(1, 10);
+        //    if (random == 1) {
+        //        WorldHopper.quickHop(134);
+        //    }
+        //    if (random == 2) {
+        //        WorldHopper.quickHop(136);
+        //    }
+        //}
+        NPC isAttackingPlayer = NPCs.closest(attackingPlayer);
+        //if (buryBones) {
+        //    if (Inventory.count("Big bones") > Calculations.random(1, 10) && getLocal().getInteractingIndex() == -1) {
+        //        while (Inventory.count("Big bones") > 0) {
+        //            Inventory.interact("Big bones");
+        //            Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
+        //        }
+        //        Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), 1000);
+        //    }
+        //}
+        //if (groundItem != null && !Inventory.isFull() && getLocal().getInteractingIndex() == -1) {
+        //    groundItem.interact("Take");
+        //    print("Picking up " + groundItem.getName());
+        //    //Sleep.sleepUntil(() -> !getLocal().isMoving(), 1000);
+        //    if (groundItem != null && Inventory.count("Adamant arrow") > Calculations.random(1, 100)) {
+        //        Inventory.interact("Adamant Arrow");
+        //    }
+        //}
+        //Attacking Giant frogs that are not in combat
+        if (!getLocal().isInCombat() && closestNoob != null && closestNoob.getIndex() != 1137) {
+            while (checkBox.isSelected() && groundItem != null) {
+                startPickingUpItemTask();
+            }
+            if (closestNoob.distance(getLocal()) < 10) {
+                //closestNoob = NPCs.closest(frogFilter);
+                closestNoob.interact("Attack");
+                print("Testing " + closestNoob.canReach(getLocal().getTile()));
+                print("Testing new" + frogFilter);
+            }
+        }
+        if (Equipment.contains(weapon) && isGuardKiller) {
+            test(GUARD_KILLER_2);
+            test(GUARD_KILLER_1);
+        }
+        //Needs work
+        //if (!currTask.getStartTile().getArea(Calculations.random(10, 15)).contains(getLocal()) && !getLocal().isInCombat() && groundItem == null) {
+        //    Walking.walk(currTask.getStartTile());
+        //    print("Player is too far. Returning to start tile for duck hunting");
+        //}
+        if (groundItem != null) {
+            print("Testing distance " + groundItem.getTile().distance(getLocal()));
+        }
+        AntiPattern();
+        print("Healt is at " + getLocal().getHealthPercent() + "%");
+        //print("Frog is in combat? " + closestNoob.isInCombat());
+        //print("Frog interacting with player? " + closestNoob.isInteracting(getLocal()));
+        //closestNoob = NPCs.closest(attackingPlayer);
+        print("Correct frog is interacting with player? " + closestNoob);
+        while (Dialogues.canContinue()) {
+            Dialogues.spaceToContinue();
+            sleep(1000, 1500);
+        }
+        sleep(300, 600);
+    }
+
+    private void startMineTask() {
+
+        if (!Tab.INVENTORY.isOpen()) {
+            Tabs.openWithMouse(Tab.INVENTORY);
+            sleep(300, 500);
+        }
+        NPC strayDog = NPCs.closest("Stray dog");
+        if (strayDog != null && strayDog.isOnScreen() && strayDog.isInCombat() && strayDog.canReach(getLocal().getTile())) {
+            int random = Calculations.random(1,50);
+            print("Stray dog anti pattern " + random);
+            if (random == 1) {
+                strayDog.interact("Pet");
+            }
+            if (random == 25) {
+                strayDog.interact("Shoo-away");
+            }
+            Sleep.sleepUntil(() -> !strayDog.isInCombat(), 1200);
+        }
+        if (Bank.isOpen()) {
+            bank.close();
+
+            print("Bank closed! Going to " + getState());
+            Sleep.sleepUntil(new Condition() {
+                public boolean verify() {
+                    return !bank.isOpen();
+                }
+            }, 1200);
+        }
+        else {
+            if (Inventory.contains("Bronze pickaxe")) {
+                Inventory.interact("Bronze pickaxe", "Wield");
+            } else if  (Inventory.contains("Iron pickaxe")) {
+                Inventory.interact("Iron pickaxe", "Wield");
+            }
+            else if (currTask.getStartTile().distance(getLocal()) > 10) {
+                Walking.walk(currTask.getStartTile());
+                //AntiPattern();
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return getLocal().isMoving();
+                    }
+                }, 2000);
+            } else if ((currTask.dontMove() && !getLocal().getTile().equals(currTask.getStartTile()))) {
+                print("liigun");
+                Walking.walk(currTask.getStartTile());
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return getLocal().isMoving();
+                    }
+                }, 2000);
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return !getLocal().isMoving();
+                    }
+                }, 2000);
+            } //kui dont move on checked
+            else {
+                if (Camera.getPitch() < 270) {
+                    Camera.rotateToPitch((int) (Calculations.random(300, 400) * Client.seededRandom()));
+                }
+                if (getLocal().getAnimation() == -1 && (currRock == null || !currRock.isOnScreen() || !currTask.isPowerMine())) {
+                    print("Going to find " + currTask.getRock());
+                    currRock = currTask.getRock();//getGameObjects().getClosest(currTask.getIDs());
+                }
+                if (getLocal().getAnimation() == -1 || (getLocal().getAnimation() == 624 && currRock == null)) {
+                    print("Running mining sequence");
+                    if (currRock != null && currRock.exists() && getLocal().getTile().equals(currTask.getStartTile())) {
+                        currRock.interact("Mine");
+                        print("Starting to mine " + currTask.getRock());
+                        AntiPattern();
+                        if (currRock.interact("Mine")) {
+                            print("Mining");
+                            sleep(100,300);
+                            if (currTask.isPowerMine()) {
+                                hover(true);
+                            } else {
+                                print("Current start tile is " + currTask.getStartTile());
+                                print("Current player tile is " + getLocal().getTile());
+                                if (currTask.getStartTile() != getLocal().getTile() && getLocal().getAnimation() == 1) {
+                                    print("Start tile is not equal to current tile");
+                                    print("Walking to start tile");
+                                    Walking.walk(currTask.getStartTile());
+                                }
+                                //Sleep.sleepUntil(() -> currRock.getTile() != null, 1800);
+                                //print("Testing null");
+                                //Sleep.sleepUntil(() -> currRock == null, 200);
+
+                                //Sleep.sleepUntil(() -> getLocal().getAnimation() != -1, 2000);
+                                //print("Sleeping1");
+                                //Sleep.sleepUntil(() -> getLocal().getAnimation() == -1, 1800);
+                                //print("Sleeping2");
+                                //sleep(0, 100);
+                            }
+                        }
+                    }
+                }
+
+                if (currRock == null && getLocal().getAnimation() == 624) {
+                    print("Testing feil2 " + getLocal().getAnimation());
+                    print("Testing feil2 " + currTask.getRock());
+                    currRock.interact("Mine");
+                }
+                if (getLocal().getAnimation() == -1) {
+                    if (Objects.equals(currTask.getOreName(), "Tin ore")) {
+                        print("Mining tin ore");
+                    }
+                    if (Objects.equals(currTask.getOreName(), "Copper ore")) {
+                        print("Mining copper ore");
+                    }
+                    if (Objects.equals(currTask.getOreName(), "Iron ore")) {
+                        if (currRock != null) {
+                            print("Mining " + currRock.getName() + " ore " + currRock.getTile());
+                        }
+                    }
+
+                    Sleep.sleepWhile(() -> getLocal().getAnimation() == 625, 20000);
+                    //AntiPattern();
+                }
+
+                if (getLocal().getAnimation() == -1 && !currTask.getStartTile().equals(getLocal().getTile())) {
+                    Walking.walk(currTask.getStartTile());
+                    print("Walking to " + currTask.getStartTile() + " tile");
+                }
+                List<Player> allPlayers = Players.all();
+                allPlayers.remove(getLocal());
+                //If other player is mining on same tile, find new one.
+                if (allPlayers.size() > 0) {
+                    //Player closestPlayer = allPlayers.get(closest(0-1));
+                    Player randomPlayer = allPlayers.get(Calculations.random(allPlayers.size()));
+                    Tile PlayerOnSameTile = randomPlayer.getTile();
+                    String PlayerName = randomPlayer.getName();
+
+
+                    //If Ore name = Copper ore and current tile is occupied by someone else get new tile
+                    if (PlayerOnSameTile.equals(currTask.getStartTile()) && Objects.equals(currTask.getOreName(), "Copper ore")) {
+                        int randomNr = Calculations.random(1, 3);
+                        print("Getting new " + currTask.getRock() + " tile " + randomNr);
+                        if (randomNr == 1 && !getLocal().getTile().equals(currTask.getStartTile())) {
+                            currTask.setStarTile(COPPER_ORE_1);
+                        }
+                        if (randomNr == 2 && !getLocal().getTile().equals(currTask.getStartTile())) {
+                            currTask.setStarTile(COPPER_ORE_2);
+                        }
+                        if (randomNr == 3 && !getLocal().getTile().equals(currTask.getStartTile())) {
+                            currTask.setStarTile(COPPER_ORE_3);
+                        }
+                        print("player on same Tile " + PlayerOnSameTile + ' ' + PlayerName);
+                    }
+                    //If Ore name = Tin ore and current tile is occupied by someone else get new tile
+                    if (PlayerOnSameTile.equals(currTask.getStartTile()) && Objects.equals(currTask.getOreName(), "Tin ore")) {
+                        int randomNr = Calculations.random(1, 3);
+                        print("Getting new " + currTask.getRock() + " tile " + randomNr);
+                        if (randomNr == 1) {
+                            currTask.setStarTile(TIN_ORE_1);
+                        }
+                        if (randomNr == 2) {
+                            currTask.setStarTile(TIN_ORE_2);
+                        }
+                        if (randomNr == 3) {
+                            currTask.setStarTile(TIN_ORE_3);
+                        }
+                        print("player on same Tile " + PlayerOnSameTile + ' ' + PlayerName);
+                    }
+                }
+                //print("player on same tile" + newTile + PlayerName);
+
+                sleep(100, 300);
+            }
+        }
+        currTask.getTracker().update();
+    }
+
+    private void startSmithTask() {
+        int copperOreCount = Bank.count("Copper ore");
+        int tinOreCount = Bank.count("Tin ore");
+        int ironOreCount = Bank.count("Iron ore");
+        if (copperOreCount > 1000 && tinOreCount > 1000) {
+            currTask.setOreName("Bronze bar");
+        }
+        if (ironOreCount > 100) {
+            currTask.setOreName("Iron bar");
+        }
+        print("Changing task to " + currTask.getOreName());
+        currTask.setBank(BankLocation.EDGEVILLE);
+        print("Changing bank location to " + currTask.getBank());
+        if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Bronze bar")) {
+            currTask.setGoal("mine=" + Math.min(copperOreCount, tinOreCount));
+        }
+        if (!currTask.getGoal().contains("mine") && currTask.getOreName().equals("Iron bar")) {
+            currTask.setGoal("mine=" + ironOreCount);
+        }
+        Bank.getClosestBankLocation();
+        grabBronzeBarsToSmelt();
+        WalkToFurnace();
+        InteractWithFurnace();
+    }
+
+    private void startBankTask() {
+        print("Switching to case BANK");
+        if (bank.isOpen()) {
+            if (inv.get(new Filter<Item>() {
+                public boolean match(Item i) {
+                    if (i == null || i.getName() == null) {
+                        return false;
+                    }
+                    return i.getName().contains("pickaxe");
+                }
+            }) != null) {
+                for (int i = 0; i < 28; i++) {
+                    final Item item = inv.getItemInSlot(i);
+                    if (item != null && !item.getName().contains("pickaxe")) {
+                        bank.depositAll(item.getName());
+                        Sleep.sleepUntil(() -> !inv.contains(item.getName()), 2000);
+                    }
+
+                }
+            } else {
+                Bank.depositAllItems();
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return Inventory.isEmpty() && getLocal().getHealthPercent() == 100;
+                    }
+                }, 2000);
+
+            }
+        } else {
+            if (currTask.getBank().getArea(Calculations.random(7,10)).contains(getLocal()))
+            {
+                Bank.open();
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return Bank.isOpen();
+                    }
+                }, 2000);
+            }
+            else {
+                print("Liigun panka!");
+                Walking.walk(currTask.getBank().getCenter());
+                AntiPattern();
+                Sleep.sleepUntil(new Condition() {
+                    public boolean verify() {
+                        return getLocal().isMoving();
+                    }
+                }, 2000);
+            }
+        }
+    }
+
+    private void startDropTask() {
+        print("Started drop");
+        currRock = null;
+        Item ore = inv.get(currTask.getOreName());
+        if (ore != null) {
+            inv.interact(ore.getName(), "Drop");
+            Sleep.sleepUntil(new Condition() {
+                public boolean verify() {
+                    Item ore = inv.get(currTask.getOreName());
+                    return ore == null;
+                }
+            }, 1200);
+        }
+    }
+
+    private void startPickingUpItemTask() {
+        GroundItem allowedItems = GroundItems.closest(bigBones);
+        //NPE -- GroundItem closestNextItem = GroundItems.closest(isItemClicked);
+        GroundItem sizeOfClickedTile = GroundItems.closest(sizeOfItemsOnClickedTile);
+        int size = sizeOfClickedTile.getAmount();
+        int bones = Inventory.count("Big bones");
+        int arrows = Inventory.count("Adamant Arrow");
+        int itemsTotal = bones + arrows;
+
+        Tile clickedItemTile = allowedItems.getTile();
+
+
+        if (allowedItems != null) {
+
+            allowedItems.interact("Take");
+            Sleep.sleepUntil(() -> !allowedItems.exists(), 5000);
+            //if (size == 1) {
+            //    Mouse.move(closestNextItem);
+            //}
+
+            print("Picking up " + allowedItems.getName());
+            int bones2 = Inventory.count("Big bones");
+            int arrows2 = Inventory.count("Adamant Arrow");
+            int itemsTotal2 = bones2 + arrows2;
+            boolean isItemPickedUp = itemsTotal < itemsTotal2;
+            Sleep.sleepUntil(() -> itemsTotal < itemsTotal2, 5000);
+
+        }
+
+        //Sleep.sleepUntil(() -> !getLocal().isMoving(), 1000);
+        if (groundItem != null && Inventory.count("Adamant arrow") > Calculations.random(1, 100)) {
+            Inventory.interact("Adamant Arrow");
+            sleep(500);
+        }
+    }
+
+    private void startBuryBonesTask() {
+        while (Inventory.count("Big bones") > 0) {
+            Inventory.interact("Big bones");
+            Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), Calculations.random(100, 250));
+        }
+        Sleep.sleepUntil(() -> !Inventory.contains("Big bones"), Calculations.random(100, 250));
+    }
+    private Tile interactedItemTile() {
+        GroundItem newAllowedItems = GroundItems.closest(bigBones);
+        return newAllowedItems != null ? newAllowedItems.getTile() : null;
+    }
+    private final Filter<GroundItem> isItemClicked = go -> !go.getTile().equals(interactedItemTile());
+
+    private final Filter<GroundItem> sizeOfItemsOnClickedTile = go -> go.getTile().equals(interactedItemTile());
+
 }

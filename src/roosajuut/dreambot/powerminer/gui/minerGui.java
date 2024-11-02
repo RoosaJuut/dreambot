@@ -289,7 +289,7 @@ public class minerGui extends JFrame {
 		model1.clear();
 		String[] content = fm.readFileArray(fileName);
 		//(ctx, oreName, ids, startTile, goal, powermine, bank, dontMove);
-		for(int i = 0; i < content.length; i+=9){
+		for(int i = 0; i < content.length; i+=10){
 			//get name
 			String oreName = content[i];
 			//get ids
